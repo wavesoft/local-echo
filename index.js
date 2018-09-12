@@ -31,13 +31,37 @@ function closestRightBoundary(input, offset) {
 }
 
 /**
+ * Convert offset at the given input to col/row location
+ *
+ * This function is not optimized and practically emulates via brute-force
+ * the navigation on the terminal, wrapping when they reach the column width.
+ */
+function offsetToColRow(input, offset, maxCols) {
+  let row = 0,
+    col = 0;
+
+  for (let i = 0; i < offset; ++i) {
+    const chr = input.charAt(i);
+    if (chr == "\n") {
+      col = 0;
+      row += 1;
+    } else {
+      col += 1;
+      if (col > maxCols) {
+        col = 0;
+        row += 1;
+      }
+    }
+  }
+
+  return { row, col };
+}
+
+/**
  * Counts the lines in the given input
  */
-function countLines(input, cols) {
-  const lines = input.split("\n");
-  return lines.reduce((count, line) => {
-    return count + Math.ceil(line.length / cols)
-  }, 0);
+function countLines(input, maxCols) {
+  return offsetToColRow(input, input.length, maxCols).row + 1;
 }
 
 /**
@@ -75,7 +99,7 @@ function isIncompleteInput(input) {
     return true;
   }
   // Check for tailing slash
-  if (input.endsWith("\\")) {
+  if (input.endsWith("\\") && !input.endsWith("\\\\")) {
     return true;
   }
 
@@ -100,7 +124,6 @@ class HistoryController {
       this.entries.pop(0);
     }
   }
-
 }
 
 /**
@@ -118,17 +141,21 @@ class HistoryController {
  * - Tab characters are replaced with 4 spaces
  */
 class LocalEchoController {
-  constructor(term, historySize=10) {
+  constructor(term, historySize = 10) {
     this.term = term;
-    this.term.on("data", this.handleData.bind(this));
+    this.term.on("data", this.handleTermData.bind(this));
+    this.term.on("resize", this.handleTermResize.bind(this));
     this.history = new HistoryController(historySize);
 
     this._autocompleteHandlers = [];
     this._active = false;
     this._input = "";
     this._cursor = 0;
-    this._breakPoint = 0;
     this._activePrompt = null;
+    this._termSize = {
+      cols: this.term.cols,
+      rows: this.term.rows
+    };
   }
 
   /**
@@ -152,7 +179,7 @@ class LocalEchoController {
    * Return a promise that will resolve when the user has completed
    * typing a single line
    */
-  read(prompt, continuationPrompt = "→ ") {
+  read(prompt, continuationPrompt = "> ") {
     return new Promise((resolve, reject) => {
       this.term.write(prompt);
       this._activePrompt = {
@@ -164,7 +191,6 @@ class LocalEchoController {
 
       this._input = "";
       this._cursor = 0;
-      this._breakPoint = 0;
       this._active = true;
     });
   }
@@ -197,47 +223,137 @@ class LocalEchoController {
   }
 
   /**
+   * Apply prompts to the given input
+   */
+  applyPrompts(input) {
+    const prompt = (this._activePrompt || {}).prompt || "";
+    const continuationPrompt =
+      (this._activePrompt || {}).continuationPrompt || "";
+
+    return prompt + input.replace(/\n/g, "\n" + continuationPrompt);
+  }
+
+  /**
+   * Advances the `offset` as required in order to accompany the prompt
+   * additions to the input.
+   */
+  applyPromptOffset(input, offset) {
+    const newInput = this.applyPrompts(input.substr(0, offset));
+    return newInput.length;
+  }
+
+  /**
+   * Clears the current prompt
+   *
+   * This function will erase all the lines that display the current prompt
+   * and move the cursor in the beginning of the first line of the prompt.
+   */
+  clearInput() {
+    const currentPrompt = this.applyPrompts(this._input);
+
+    // Get the overall number of lines to clear
+    const allRows = countLines(currentPrompt, this._termSize.cols);
+
+    // Get the line we are currently in
+    const promptCursor = this.applyPromptOffset(this._input, this._cursor);
+    const { col, row } = offsetToColRow(
+      currentPrompt,
+      promptCursor,
+      this._termSize.cols
+    );
+
+    // First move on the last line
+    const moveRows = allRows - row - 1;
+    for (var i = 0; i < moveRows; ++i) term.write("\x1B[E");
+
+    // Clear current input line(s)
+    term.write("\r\x1B[K");
+    for (var i = 1; i < allRows; ++i) term.write("\x1B[F\x1B[K");
+  }
+
+  /**
    * Replace input with the new input given
    *
-   * This function:
-   * - Overwrites the current input by using the back arrow until it hits
-   *   the beginning of the current input, and then writing the new over.
-   * - Erases smaller input, replacing them with empty characters.
-   * - Remembers the last cursor position and tries to re-position it.
-   *
+   * This function clears all the lines that the current input occupies and
+   * then replaces them with the new input.
    */
-  setInput(newInput) {
-    const breakOffset = this._cursor - this._breakPoint;
+  setInput(newInput, clearInput = true) {
+    // Clear current input
+    if (clearInput) this.clearInput();
 
-    // Replace input
-    for (var i = 0; i < breakOffset; ++i) this.term.write("\x1B[D");
-    this.term.write(newInput.substr(this._breakPoint));
-
-    // Erase characters
-    const erase = Math.max(0, this._input.length - newInput.length);
-    for (var i = 0; i < erase; ++i) this.term.write(" ");
-    for (var i = 0; i < erase; ++i) this.term.write("\x1B[D");
+    // Write the new input lines, including the current prompt
+    const newPrompt = this.applyPrompts(newInput);
+    this.print(newPrompt);
 
     // Trim cursor overflow
     if (this._cursor > newInput.length) {
       this._cursor = newInput.length;
     }
 
-    // Apply cursor correction
-    const cursorCorr = Math.max(0, newInput.length - this._cursor);
-    for (var i = 0; i < cursorCorr; ++i) this.term.write("\x1B[D");
+    // Move the cursor to the appropriate row/col
+    const newCursor = this.applyPromptOffset(newInput, this._cursor);
+    const newLines = countLines(newPrompt, this._termSize.cols);
+    const { col, row } = offsetToColRow(
+      newPrompt,
+      newCursor,
+      this._termSize.cols
+    );
+    const moveUpRows = newLines - row - 1;
 
+    term.write("\r");
+    for (var i = 0; i < moveUpRows; ++i) term.write("\x1B[F");
+    for (var i = 0; i < col; ++i) this.term.write("\x1B[C");
+
+    // Replace input
     this._input = newInput;
   }
 
   /**
-   * Set the new cursor position
+   * Set the new cursor position, as an offset on the input string
+   *
+   * This function:
+   * - Calculates the previous and current
    */
   setCursor(newCursor) {
-    if (newCursor < this._breakPoint) newCursor = this._breakPoint;
+    if (newCursor < 0) newCursor = 0;
     if (newCursor > this._input.length) newCursor = this._input.length;
-    const offset = newCursor - this._cursor;
-    this.handleCursorMove(offset);
+
+    // Apply prompt formatting to get the visual status of the display
+    const inputWithPrompt = this.applyPrompts(this._input);
+    const inputLines = countLines(inputWithPrompt, this._termSize.cols);
+
+    // Estimate previous cursor position
+    const prevPromptOffset = this.applyPromptOffset(this._input, this._cursor);
+    const { col: prevCol, row: prevRow } = offsetToColRow(
+      inputWithPrompt,
+      prevPromptOffset,
+      this._termSize.cols
+    );
+
+    // Estimate next cursor position
+    const newPromptOffset = this.applyPromptOffset(this._input, newCursor);
+    const { col: newCol, row: newRow } = offsetToColRow(
+      inputWithPrompt,
+      newPromptOffset,
+      this._termSize.cols
+    );
+
+    // Adjust vertically
+    if (newRow > prevRow) {
+      for (let i = prevRow; i < newRow; ++i) term.write("\x1B[B");
+    } else {
+      for (let i = newRow; i < prevRow; ++i) term.write("\x1B[A");
+    }
+
+    // Adjust horizontally
+    if (newCol > prevCol) {
+      for (let i = prevCol; i < newCol; ++i) term.write("\x1B[C");
+    } else {
+      for (let i = newCol; i < prevCol; ++i) term.write("\x1B[D");
+    }
+
+    // Set new offset
+    this._cursor = newCursor;
   }
 
   /**
@@ -246,12 +362,10 @@ class LocalEchoController {
   handleCursorMove(dir) {
     if (dir > 0) {
       const num = Math.min(dir, this._input.length - this._cursor);
-      this._cursor += num;
-      for (let i = 0; i < num; ++i) this.term.write("\x1B[C");
+      this.setCursor(this._cursor + num);
     } else if (dir < 0) {
       const num = Math.max(dir, -this._cursor);
-      this._cursor += num;
-      for (let i = num; i < 0; ++i) this.term.write("\x1B[D");
+      this.setCursor(this._cursor + num);
     }
   }
 
@@ -261,10 +375,11 @@ class LocalEchoController {
   handleCursorErase(backspace) {
     const { _cursor, _input } = this;
     if (backspace) {
-      if (_cursor <= this._breakPoint) return;
+      if (_cursor <= 0) return;
       const newInput = _input.substr(0, _cursor - 1) + _input.substr(_cursor);
-      this.handleCursorMove(-1);
-      this.setInput(newInput);
+      this.clearInput();
+      this._cursor -= 1;
+      this.setInput(newInput, false);
     } else {
       const newInput = _input.substr(0, _cursor) + _input.substr(_cursor + 1);
       this.setInput(newInput);
@@ -277,8 +392,8 @@ class LocalEchoController {
   handleCursorInsert(data) {
     const { _cursor, _input } = this;
     const newInput = _input.substr(0, _cursor) + data + _input.substr(_cursor);
+    this._cursor += 1;
     this.setInput(newInput);
-    this.handleCursorMove(data.length);
   }
 
   /**
@@ -294,12 +409,41 @@ class LocalEchoController {
   }
 
   /**
+   * Handle terminal resize
+   *
+   * This function clears the prompt using the previous configuration,
+   * updates the cached terminal size information and then re-renders the
+   * input. This leads (most of the times) into a better formatted input.
+   */
+  handleTermResize(data) {
+    const { rows, cols } = data;
+    this.clearInput();
+    this._termSize = { cols, rows };
+    this.setInput(this._input, false);
+  }
+
+  /**
    * Handle terminal input
    */
-  handleData(data) {
-    let ofs;
-    const ord = data.charCodeAt(0);
+  handleTermData(data) {
     if (!this._active) return;
+
+    // If this looks like a pasted input, expand it
+    if (data.length > 3 && data.charCodeAt(0) !== 0x1b) {
+      const normData = data.replace(/[\r\n]+/g, "\r");
+      Array.from(normData).forEach(c => this.handleData(c));
+    } else {
+      this.handleData(data);
+    }
+  }
+
+  /**
+   * Handle a single piece of information from the terminal.
+   */
+  handleData(data) {
+    if (!this._active) return;
+    const ord = data.charCodeAt(0);
+    let ofs;
 
     // Handle ANSI escape sequences
     if (ord == 0x1b) {
@@ -321,7 +465,7 @@ class LocalEchoController {
           break;
 
         case "[H": // Home
-          this.setCursor(this._breakPoint);
+          this.setCursor(0);
           break;
 
         case "b": // ALT + LEFT
@@ -336,7 +480,7 @@ class LocalEchoController {
 
         case "\x7F": // CTRL + BACKSPACE
           ofs = closestLeftBoundary(this._input, this._cursor);
-          if (ofs != null && ofs >= this._breakPoint) {
+          if (ofs != null) {
             this.setInput(
               this._input.substr(0, ofs) + this._input.substr(this._cursor)
             );
@@ -350,19 +494,7 @@ class LocalEchoController {
       switch (data) {
         case "\r": // ENTER
           if (isIncompleteInput(this._input)) {
-            // Strip new-line escape
-            if (this._input.endsWith("\\")) {
-              this._input = this._input.substr(0, this._input.length - 1);
-              this._cursor -= 1;
-            } else {
-              this._input += "\n";
-              this._cursor += 1;
-            }
-
-            this._breakPoint = this._cursor;
-            this.term.write(
-              "\r\n" + ((this._activePrompt || {}).continuationPrompt || "> ")
-            );
+            this.handleCursorInsert("\n");
           } else {
             this.handleCompletion();
           }
@@ -377,19 +509,15 @@ class LocalEchoController {
           break;
 
         case "\x03": // CTRL+C
+          this.setCursor(this._input.length);
           this.term.write("^C\r\n" + ((this._activePrompt || {}).prompt || ""));
           this._input = "";
-          this._breakPoint = 0;
           this._cursor = 0;
           break;
       }
 
       // Handle visible characters
     } else {
-      // In the case where the user has pasted an input blob, we should
-      // normalize the input.
-      data = data.replace(/[\r\n]/g, " ");
-
       this.handleCursorInsert(data);
     }
   }
