@@ -1,4 +1,6 @@
-# 📢 local-echo
+# 📢 local-echo 
+[![Travis (.org)](https://img.shields.io/travis/wavesoft/local-echo.svg)](https://travis-ci.org/wavesoft/local-echo)
+
 
 > A fully functional local echo controller for xterm.js
 
@@ -14,7 +16,7 @@ The local echo controller tries to replicate most of the bash-like user experien
 - _Multi-line continuation_: Break command to multiple lines if they contain incomplete quotation marks, boolean operators (`&&` or `||`), pipe operator (`|`), or new-line escape sequence (`\`).
 - _Full-navigation on multi-line command_: You are not limited only on the line you are editing, you can navigate and edit all of your lines.
 - _Local History_: Just like bash, access the commands you previously typed using the `up` and `down` arrows.
-- _Tab-Completion_: Provides support for registering your own tab-completion callbacks.
+- _Tab-Completion_: Provides support for registering your own tab-completion callbacks. **WIP** 
 
 # Usage
 
@@ -57,7 +59,7 @@ The local echo controller tries to replicate most of the bash-like user experien
 2. Include it in your HTML:
 
     ```
-    <script src="/local-echo.js"></script>
+    <script src="/js/local-echo.js"></script>
     ```
 
 3. Use it like so:
