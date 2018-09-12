@@ -113,16 +113,49 @@ class HistoryController {
   constructor(size) {
     this.size = size;
     this.entries = [];
+    this.cursor = 0;
   }
 
   /**
    * Push an entry and maintain ring buffer size
    */
-  add(entry) {
+  push(entry) {
+    // Skip empty entries
+    if (entry.trim() === "") return;
+    // Skip duplicate entries
+    const lastEntry = this.entries[this.entries.length - 1];
+    if (entry == lastEntry) return;
+    // Keep track of entries
     this.entries.push(entry);
     if (this.entries.length > this.size) {
       this.entries.pop(0);
     }
+    this.cursor = this.entries.length;
+  }
+
+  /**
+   * Rewind history cursor on the last entry
+   */
+  rewind() {
+    this.cursor = this.entries.length;
+  }
+
+  /**
+   * Returns the previous entry
+   */
+  getPrevious() {
+    const idx = Math.max(0, this.cursor - 1);
+    this.cursor = idx;
+    return this.entries[idx];
+  }
+
+  /**
+   * Returns the next entry
+   */
+  getNext() {
+    const idx = Math.min(this.entries.length, this.cursor + 1);
+    this.cursor = idx;
+    return this.entries[idx];
   }
 }
 
@@ -157,6 +190,10 @@ class LocalEchoController {
       rows: this.term.rows
     };
   }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // User-Facing API
+  /////////////////////////////////////////////////////////////////////////////
 
   /**
    * Register a handler that will be called to satisfy auto-completion
@@ -221,6 +258,10 @@ class LocalEchoController {
     const normInput = message.replace(/[\r\n]+/g, "\n");
     this.term.write(normInput.replace(/\n/g, "\r\n"));
   }
+
+  /////////////////////////////////////////////////////////////////////////////
+  // Internal API
+  /////////////////////////////////////////////////////////////////////////////
 
   /**
    * Apply prompts to the given input
@@ -399,7 +440,10 @@ class LocalEchoController {
   /**
    * Handle input completion
    */
-  handleCompletion() {
+  handleReadComplete() {
+    if (this.history) {
+      this.history.push(this._input);
+    }
     if (this._activePrompt) {
       this._activePrompt.resolve(this._input);
       this._activePrompt = null;
@@ -448,6 +492,25 @@ class LocalEchoController {
     // Handle ANSI escape sequences
     if (ord == 0x1b) {
       switch (data.substr(1)) {
+        case "[A": // Up arrow
+          if (this.history) {
+            let value = this.history.getPrevious();
+            if (value) {
+              this.setInput(value);
+              this.setCursor(value.length);
+            }
+          }
+          break;
+
+        case "[B": // Down arrow
+          if (this.history) {
+            let value = this.history.getNext();
+            if (!value) value = "";
+            this.setInput(value);
+            this.setCursor(value.length);
+          }
+          break;
+
         case "[D": // Left Arrow
           this.handleCursorMove(-1);
           break;
@@ -496,7 +559,7 @@ class LocalEchoController {
           if (isIncompleteInput(this._input)) {
             this.handleCursorInsert("\n");
           } else {
-            this.handleCompletion();
+            this.handleReadComplete();
           }
           break;
 
@@ -513,6 +576,7 @@ class LocalEchoController {
           this.term.write("^C\r\n" + ((this._activePrompt || {}).prompt || ""));
           this._input = "";
           this._cursor = 0;
+          if (this.history) this.history.rewind();
           break;
       }
 
