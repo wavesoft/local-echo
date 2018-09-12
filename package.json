@@ -40,5 +40,8 @@
     "transform": {
       "^.+\\.jsx?$": "babel-jest"
     }
+  },
+  "dependencies": {
+    "shell-quote": "^1.6.1"
   }
 }
