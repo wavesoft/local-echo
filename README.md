@@ -1,4 +1,4 @@
-# 📢 local-echo [![Travis (.org)](https://img.shields.io/travis/wavesoft/local-echo.svg)](https://travis-ci.org/wavesoft/local-echo)
+# 📢 local-echo [![Travis (.org)](https://img.shields.io/travis/wavesoft/local-echo.svg)](https://travis-ci.org/wavesoft/local-echo) [![Try it in codepen.io](https://img.shields.io/badge/Try%20it-codepen.io-blue.svg)](https://codepen.io/anon/pen/qMYjGZ?editors=0010)
 
 
 > A fully functional local echo controller for xterm.js
