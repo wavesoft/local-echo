@@ -73,7 +73,6 @@ function countLines(input, maxCols) {
  * - An input that ends with "\"
  * - An input that has an incomplete boolean shell expression (&& and ||)
  * - An incomplete pipe expression (|)
- *
  */
 function isIncompleteInput(input) {
   // Empty input is not incomplete
@@ -169,9 +168,6 @@ class HistoryController {
  * - Alt-backspace for word-boundary deletion
  * - Multi-line input for incomplete commands
  * - Auto-complete hooks
- *
- * Caveats / Known bugs:
- * - Tab characters are replaced with 4 spaces
  */
 class LocalEchoController {
   constructor(term, historySize = 10) {
@@ -587,4 +583,4 @@ class LocalEchoController {
   }
 }
 
-module.exports = LocalEchoController;
+export default LocalEchoController;
