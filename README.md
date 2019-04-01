@@ -60,8 +60,14 @@ The local echo controller tries to replicate most of the bash-like user experien
     ```
     <script src="/js/local-echo.js"></script>
     ```
+    
+3. (Alternate) Load it directly from [unpkg](https://unpkg.com]
 
-3. Use it like so:
+    ```
+    <script src="//unpkg.com/local-echo@0.2.0/dist/local-echo.js"></script>
+    ```
+
+4. Use it like so:
 
     ```js
     // Start an xterm.js instance
