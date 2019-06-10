@@ -2,7 +2,8 @@
   "name": "local-echo",
   "version": "0.2.0",
   "description": "A local echo controller for xterm.js",
-  "main": "index.js",
+  "type": "module",
+  "main": "./index.mjs",
   "scripts": {
     "test": "jest",
     "build": "webpack"
