@@ -43,8 +43,11 @@ The local echo controller tries to replicate most of the bash-like user experien
     const term = new Terminal();
     term.open(document.getElementById('terminal'));
 
-    // Create a local echo controller
+    // Create a local echo controller (xterm.js v3)
     const localEcho = new LocalEchoController(term);
+    // Create a local echo controller (xterm.js >=v4)
+    const localEcho = new LocalEchoController();
+    term.loadAddon(localEcho);
 
     // Read a single line from the user
     localEcho.read("~$ ")
@@ -68,8 +71,11 @@ The local echo controller tries to replicate most of the bash-like user experien
     const term = new Terminal();
     term.open(document.getElementById('terminal'));
 
-    // Create a local echo controller
+    // Create a local echo controller (xterm.js v3)
     const localEcho = new LocalEchoController(term);
+    // Create a local echo controller (xterm.js >=v4)
+    const localEcho = new LocalEchoController();
+    term.loadAddon(localEcho);
 
     // Read a single line from the user
     localEcho.read("~$ ")
